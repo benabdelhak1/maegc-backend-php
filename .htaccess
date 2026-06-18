@@ -1,0 +1,12 @@
+Options -Indexes
+RewriteEngine On
+
+# If the hosting document root is the backend-php folder, forward traffic to /public.
+RewriteCond %{REQUEST_URI} !^/public/
+RewriteRule ^(.*)$ public/$1 [L]
+
+<FilesMatch "^(config\.php|config\.example\.php)$">
+    Require all denied
+</FilesMatch>
+
+RedirectMatch 403 ^/(src|database|scripts)(/|$)

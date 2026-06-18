@@ -1,0 +1,151 @@
+-- MAEGC PHP/MySQL schema.
+-- Import this in the LWS MySQL database before running scripts/import-data.php.
+
+SET NAMES utf8mb4;
+SET FOREIGN_KEY_CHECKS = 0;
+
+CREATE TABLE IF NOT EXISTS teams (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(191) NOT NULL UNIQUE,
+  fullName VARCHAR(255) NULL,
+  logo TEXT NULL,
+  createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS users (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  email VARCHAR(191) NOT NULL UNIQUE,
+  password VARCHAR(255) NOT NULL,
+  role ENUM('ADMIN', 'SUPERADMIN') NOT NULL,
+  teamId INT NULL,
+  coachName VARCHAR(255) NULL,
+  coachAge INT NULL,
+  createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX users_teamId_idx (teamId),
+  CONSTRAINT users_teamId_fk FOREIGN KEY (teamId) REFERENCES teams(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS players (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  fullName VARCHAR(255) NOT NULL,
+  photo TEXT NULL,
+  age INT NULL,
+  position VARCHAR(191) NULL,
+  phoneId VARCHAR(191) NULL UNIQUE,
+  efootballId VARCHAR(191) NULL UNIQUE,
+  phoneSerie VARCHAR(191) NULL,
+  cin VARCHAR(191) NULL,
+  phone VARCHAR(191) NULL,
+  address VARCHAR(255) NULL,
+  salary INT NULL,
+  notes TEXT NULL,
+  teamId INT NULL,
+  banned TINYINT(1) NOT NULL DEFAULT 0,
+  createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX players_teamId_idx (teamId),
+  CONSTRAINT players_teamId_fk FOREIGN KEY (teamId) REFERENCES teams(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS banned_players (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  phoneId VARCHAR(191) NULL,
+  phoneSerie VARCHAR(191) NULL,
+  efootballId VARCHAR(191) NULL,
+  reason TEXT NULL,
+  dateAdded DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX banned_phoneId_idx (phoneId),
+  INDEX banned_efootballId_idx (efootballId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS contracts (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  playerId INT NOT NULL UNIQUE,
+  startDate DATETIME NOT NULL,
+  endDate DATETIME NOT NULL,
+  createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT contracts_playerId_fk FOREIGN KEY (playerId) REFERENCES players(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS competitions (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(255) NOT NULL,
+  type ENUM('LEAGUE', 'CUP', 'SUPER_CUP', 'FRIENDLY') NOT NULL,
+  logo TEXT NULL,
+  rules TEXT NULL,
+  rulesPdfUrl TEXT NULL,
+  createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS matches (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  competitionId INT NOT NULL,
+  homeTeamId INT NOT NULL,
+  awayTeamId INT NOT NULL,
+  round INT NULL,
+  matchDate DATETIME NOT NULL,
+  referee VARCHAR(255) NULL,
+  homeScore INT NULL,
+  awayScore INT NULL,
+  createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX matches_competitionId_idx (competitionId),
+  INDEX matches_homeTeamId_idx (homeTeamId),
+  INDEX matches_awayTeamId_idx (awayTeamId),
+  CONSTRAINT matches_competitionId_fk FOREIGN KEY (competitionId) REFERENCES competitions(id) ON DELETE CASCADE,
+  CONSTRAINT matches_homeTeamId_fk FOREIGN KEY (homeTeamId) REFERENCES teams(id) ON DELETE CASCADE,
+  CONSTRAINT matches_awayTeamId_fk FOREIGN KEY (awayTeamId) REFERENCES teams(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS settings (
+  id INT PRIMARY KEY DEFAULT 1,
+  editMode TINYINT(1) NOT NULL DEFAULT 0,
+  mercatoOpen TINYINT(1) NOT NULL DEFAULT 0,
+  playerCreateOpen TINYINT(1) NOT NULL DEFAULT 0,
+  generalRulesPdfUrl TEXT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS transfer_history (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  playerId INT NOT NULL,
+  fromTeamId INT NULL,
+  toTeamId INT NULL,
+  date DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX transfer_playerId_idx (playerId),
+  INDEX transfer_fromTeamId_idx (fromTeamId),
+  INDEX transfer_toTeamId_idx (toTeamId),
+  CONSTRAINT transfer_playerId_fk FOREIGN KEY (playerId) REFERENCES players(id) ON DELETE CASCADE,
+  CONSTRAINT transfer_fromTeamId_fk FOREIGN KEY (fromTeamId) REFERENCES teams(id) ON DELETE SET NULL,
+  CONSTRAINT transfer_toTeamId_fk FOREIGN KEY (toTeamId) REFERENCES teams(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS calendar_events (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  title VARCHAR(255) NOT NULL,
+  details TEXT NULL,
+  startDate DATETIME NOT NULL,
+  endDate DATETIME NULL,
+  createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  userId INT NULL,
+  INDEX calendar_startDate_idx (startDate),
+  INDEX calendar_userId_idx (userId),
+  CONSTRAINT calendar_userId_fk FOREIGN KEY (userId) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS news (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  title VARCHAR(255) NOT NULL,
+  text TEXT NOT NULL,
+  image TEXT NULL,
+  date DATETIME NOT NULL,
+  createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX news_date_idx (date)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT IGNORE INTO settings (id, editMode, mercatoOpen, playerCreateOpen)
+VALUES (1, 0, 0, 0);
+
+SET FOREIGN_KEY_CHECKS = 1;
