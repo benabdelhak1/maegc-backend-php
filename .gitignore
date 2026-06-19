@@ -1,4 +1,6 @@
 config.php
+logs/*
+!logs/.gitkeep
 public/uploads/*
 !public/uploads/.gitkeep
 !public/uploads/rules/
