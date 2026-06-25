@@ -145,6 +145,16 @@ CREATE TABLE IF NOT EXISTS news (
   INDEX news_date_idx (date)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS staff_posters (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  title VARCHAR(255) NULL,
+  image TEXT NOT NULL,
+  sortOrder INT NOT NULL DEFAULT 0,
+  createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX staff_posters_sort_idx (sortOrder)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 INSERT IGNORE INTO settings (id, editMode, mercatoOpen, playerCreateOpen)
 VALUES (1, 0, 0, 0);
 

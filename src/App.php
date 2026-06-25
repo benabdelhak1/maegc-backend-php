@@ -51,6 +51,7 @@ final class App
                 'settings' => $this->routeSettings($segments),
                 'standings' => $this->routeStandings($segments),
                 'news' => $this->routeNews($segments),
+                'staff', 'stauf' => $this->routeStaff($segments),
                 'public' => $this->routeCalendarPublic($segments),
                 'admin' => $this->routeCalendarAdmin($segments),
                 default => Support::json(['error' => 'Route not found'], 404),
@@ -427,6 +428,32 @@ final class App
         }
         if ($method === 'DELETE' && count($s) === 2) {
             $this->deleteNews((int) $s[1]);
+            return;
+        }
+        Support::json(['error' => 'Route not found'], 404);
+    }
+
+    private function routeStaff(array $s): void
+    {
+        $method = $this->method();
+        if ($method === 'GET' && count($s) === 1) {
+            Support::json(array_map(fn ($r) => $this->staffPosterRow($r), $this->all('SELECT * FROM staff_posters ORDER BY sortOrder ASC, createdAt DESC, id DESC')));
+            return;
+        }
+        if ($method === 'POST' && count($s) === 1) {
+            $this->createStaffPoster();
+            return;
+        }
+        if ($method === 'PUT' && count($s) === 2) {
+            $this->updateStaffPoster((int) $s[1]);
+            return;
+        }
+        if ($method === 'POST' && count($s) === 3 && $s[2] === 'image') {
+            $this->uploadStaffPosterImage((int) $s[1]);
+            return;
+        }
+        if ($method === 'DELETE' && count($s) === 2) {
+            $this->deleteStaffPoster((int) $s[1]);
             return;
         }
         Support::json(['error' => 'Route not found'], 404);
@@ -959,10 +986,38 @@ final class App
     {
         $this->auth->requireSuperAdmin();
         if (empty($_FILES['logo'])) {
-            Support::json(['error' => 'No file uploaded'], 400);
+            Support::json([
+                'error' => 'No logo file was received. The server upload limit may have been exceeded.',
+            ], 400);
             return;
         }
-        $url = $this->cloudinary->upload($_FILES['logo'], 'image', 'maegc/competitions');
+
+        $file = $_FILES['logo'];
+        if ((int) ($file['size'] ?? 0) > 5 * 1024 * 1024) {
+            Support::json(['error' => 'Logo is too large. Max size is 5MB.'], 413);
+            return;
+        }
+
+        try {
+            if ($this->cloudinary->isConfigured()) {
+                try {
+                    $url = $this->cloudinary->upload($file, 'image', 'maegc/competitions');
+                } catch (\RuntimeException $cloudinaryError) {
+                    error_log(
+                        'Cloudinary competition logo upload failed; using local storage: '
+                        . $cloudinaryError->getMessage()
+                    );
+                    $url = $this->storeCompetitionLogo($file);
+                }
+            } else {
+                $url = $this->storeCompetitionLogo($file);
+            }
+        } catch (\RuntimeException $e) {
+            error_log('Competition logo upload failed: ' . $e->getMessage());
+            Support::json(['error' => $e->getMessage()], 500);
+            return;
+        }
+
         $this->update('competitions', ['logo' => $url], 'id = ?', [$id]);
         Support::json(['message' => 'Competition logo updated', 'logo' => $url]);
     }
@@ -1140,7 +1195,7 @@ final class App
             return;
         }
         $team = $player['teamId'] ? ($this->one('SELECT * FROM teams WHERE id = ?', [$player['teamId']]) ?: []) : [];
-        $pdf = Pdf::simpleContract($this->playerRow($player), $this->teamRow($team), $this->contractRow($contract));
+        $pdf = Pdf::playerContract($this->playerRow($player), $this->teamRow($team), $this->contractRow($contract));
         header('Content-Type: application/pdf');
         header('Content-Disposition: attachment; filename="contract_player_' . $playerId . '.pdf"');
         echo $pdf;
@@ -1430,6 +1485,112 @@ final class App
         Support::noContent();
     }
 
+    private function createStaffPoster(): void
+    {
+        $this->auth->requireSuperAdmin();
+        if (empty($_FILES['image'])) {
+            Support::json(['error' => 'No image uploaded'], 400);
+            return;
+        }
+
+        $title = Support::cleanString($_POST['title'] ?? null);
+        $sortOrder = (int) ($_POST['sortOrder'] ?? 0);
+        $url = $this->storeStaffPosterImage($_FILES['image']);
+
+        $id = $this->insert('staff_posters', [
+            'title' => $title,
+            'image' => $url,
+            'sortOrder' => $sortOrder,
+            'createdAt' => gmdate('Y-m-d H:i:s'),
+            'updatedAt' => gmdate('Y-m-d H:i:s'),
+        ]);
+
+        Support::json($this->staffPosterRow($this->one('SELECT * FROM staff_posters WHERE id = ?', [$id])), 201);
+    }
+
+    private function updateStaffPoster(int $id): void
+    {
+        $this->auth->requireSuperAdmin();
+        $body = Support::body();
+        $data = [];
+        if (array_key_exists('title', $body)) {
+            $data['title'] = Support::cleanString($body['title'] ?? null);
+        }
+        if (array_key_exists('sortOrder', $body)) {
+            $data['sortOrder'] = (int) ($body['sortOrder'] ?? 0);
+        }
+        $data['updatedAt'] = gmdate('Y-m-d H:i:s');
+        $this->update('staff_posters', $data, 'id = ?', [$id]);
+        Support::json($this->staffPosterRow($this->one('SELECT * FROM staff_posters WHERE id = ?', [$id])));
+    }
+
+    private function uploadStaffPosterImage(int $id): void
+    {
+        $this->auth->requireSuperAdmin();
+        if (empty($_FILES['image'])) {
+            Support::json(['error' => 'No image uploaded'], 400);
+            return;
+        }
+        $url = $this->storeStaffPosterImage($_FILES['image']);
+        $this->update('staff_posters', ['image' => $url, 'updatedAt' => gmdate('Y-m-d H:i:s')], 'id = ?', [$id]);
+        Support::json(['message' => 'Staff poster image updated', 'poster' => $this->staffPosterRow($this->one('SELECT * FROM staff_posters WHERE id = ?', [$id]))]);
+    }
+
+    private function deleteStaffPoster(int $id): void
+    {
+        $this->auth->requireSuperAdmin();
+        $this->run('DELETE FROM staff_posters WHERE id = ?', [$id]);
+        Support::noContent();
+    }
+
+    private function storeStaffPosterImage(array $file): string
+    {
+        if ($this->cloudinary->isConfigured()) {
+            try {
+                return $this->cloudinary->upload($file, 'image', 'maegc/staff');
+            } catch (\RuntimeException $e) {
+                error_log('Cloudinary staff poster upload failed; using local storage: ' . $e->getMessage());
+            }
+        }
+
+        $uploadError = (int) ($file['error'] ?? UPLOAD_ERR_NO_FILE);
+        if ($uploadError !== UPLOAD_ERR_OK || empty($file['tmp_name']) || !is_uploaded_file((string) $file['tmp_name'])) {
+            throw new \RuntimeException('The staff poster image could not be uploaded');
+        }
+
+        $image = @getimagesize((string) $file['tmp_name']);
+        $mime = strtolower((string) ($image['mime'] ?? ''));
+        $extensions = [
+            'image/jpeg' => 'jpg',
+            'image/png' => 'png',
+            'image/gif' => 'gif',
+            'image/webp' => 'webp',
+            'image/avif' => 'avif',
+        ];
+        if (!isset($extensions[$mime])) {
+            throw new \RuntimeException('Only JPG, PNG, GIF, WebP, and AVIF staff poster files are allowed');
+        }
+
+        $dir = dirname(__DIR__) . '/public/uploads/staff';
+        if (!is_dir($dir) && !mkdir($dir, 0775, true) && !is_dir($dir)) {
+            throw new \RuntimeException('Could not create the staff poster upload directory');
+        }
+
+        $filename = Support::safeFilename(
+            (string) ($file['name'] ?? 'staff-poster'),
+            'staff-poster',
+            $extensions[$mime]
+        );
+        $target = $dir . '/' . $filename;
+        if (!move_uploaded_file((string) $file['tmp_name'], $target)) {
+            throw new \RuntimeException('Could not store the staff poster image');
+        }
+
+        return Support::publicApiBase($this->config)
+            . '/uploads/staff/'
+            . rawurlencode($filename);
+    }
+
     private function calendarEvents(bool $admin): void
     {
         $where = [];
@@ -1529,6 +1690,46 @@ final class App
         $map = ['SUPERCUP' => 'SUPER_CUP', 'FRIENDLY_TOURNAMENT' => 'FRIENDLY'];
         $type = $map[$type] ?? $type;
         return in_array($type, ['LEAGUE', 'CUP', 'SUPER_CUP', 'FRIENDLY'], true) ? $type : null;
+    }
+
+    private function storeCompetitionLogo(array $file): string
+    {
+        $uploadError = (int) ($file['error'] ?? UPLOAD_ERR_NO_FILE);
+        if ($uploadError !== UPLOAD_ERR_OK || empty($file['tmp_name']) || !is_uploaded_file($file['tmp_name'])) {
+            throw new \RuntimeException('The logo file could not be uploaded');
+        }
+
+        $image = @getimagesize($file['tmp_name']);
+        $mime = strtolower((string) ($image['mime'] ?? ''));
+        $extensions = [
+            'image/jpeg' => 'jpg',
+            'image/png' => 'png',
+            'image/gif' => 'gif',
+            'image/webp' => 'webp',
+            'image/avif' => 'avif',
+        ];
+        if (!isset($extensions[$mime])) {
+            throw new \RuntimeException('Only JPG, PNG, GIF, WebP, and AVIF logo files are allowed');
+        }
+
+        $dir = dirname(__DIR__) . '/public/uploads/competition-logos';
+        if (!is_dir($dir) && !mkdir($dir, 0775, true) && !is_dir($dir)) {
+            throw new \RuntimeException('Could not create the competition logo upload directory');
+        }
+
+        $filename = Support::safeFilename(
+            (string) ($file['name'] ?? 'competition-logo'),
+            'competition-logo',
+            $extensions[$mime]
+        );
+        $target = $dir . '/' . $filename;
+        if (!move_uploaded_file($file['tmp_name'], $target)) {
+            throw new \RuntimeException('Could not store the competition logo');
+        }
+
+        return Support::publicApiBase($this->config)
+            . '/uploads/competition-logos/'
+            . rawurlencode($filename);
     }
 
     private function normalizeRules(mixed $rules): ?string
@@ -1807,6 +2008,21 @@ final class App
             'text' => $row['text'],
             'image' => $row['image'],
             'date' => Support::isoDate($row['date']),
+            'createdAt' => Support::isoDate($row['createdAt']),
+            'updatedAt' => Support::isoDate($row['updatedAt']),
+        ];
+    }
+
+    private function staffPosterRow(?array $row): ?array
+    {
+        if (!$row) {
+            return null;
+        }
+        return [
+            'id' => (int) $row['id'],
+            'title' => $row['title'],
+            'image' => $row['image'],
+            'sortOrder' => (int) $row['sortOrder'],
             'createdAt' => Support::isoDate($row['createdAt']),
             'updatedAt' => Support::isoDate($row['updatedAt']),
         ];

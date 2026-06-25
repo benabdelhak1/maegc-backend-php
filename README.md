@@ -114,10 +114,10 @@ Both `/api/...` and non-`/api/...` route forms are accepted.
 
 ## Known difference
 
-The old Node backend generated contract PDFs with Puppeteer and a JPG template. Shared LWS PHP hosting usually cannot run Chromium, so this backend returns a simple valid PDF with the contract/player data. The endpoint still works:
+Contract PDFs use the original JPG contract template and render player data directly into the PDF without Chromium:
 
 ```text
 GET /contracts/player/:playerId/pdf
 ```
 
-If the exact old visual contract template is mandatory on LWS, the next step is to add a GD/Imagick-based renderer or use an external PDF service.
+The renderer embeds the template directly, so it does not require GD, Imagick, Puppeteer, or Chromium.
